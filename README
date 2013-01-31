@@ -1,0 +1,352 @@
+reliable-udp
+=============
+
+@Author Prankur Gupta
+@Author Sudhir Kasanavesi
+
+
+INDEX - 
+		1) Server interface detection and binding.
+		2) Client-server detection 
+		3) Initial handshake.
+		4) Adding Relaibility to UDP (Flow Control)
+		5) Probing Packet
+		6) Handling Timeout and Calculation of RTT
+		7) Congestion Control
+		8) Multi-threading at client side, synchronization.
+		9) Cumulative acknowledgement on receiving lost packet.
+	   	10) Packet-drop simulation on client side.
+	   	11) Termination of Client and Server
+		
+1) Server interface detection and binding
+Server consists of build_interface_list() function in server.c detects different interfaces in the server and binds only the unicast address of those interfaces. Server detects its interfaces using get_ifi_info_plus() function. This is achieved by capturing the interface addresses by using (struct sockaddr_in *) ifi->ifi_addr thus eliminating the broadcast and wildcard addresses. 
+
+The network mask of the address is captured using (struct sockaddr_in *)ifi->ifi_ntmaddr and the subnet address is calculating as below:
+subnet_address.sin_addr.s_addr = (ip_address->sin_addr.s_addr) & (network_mask->sin_addr.s_addr);
+
+This process is repeated for all the interfaces present on the machine and it binds it and creates a different socket for each interface. All the sockets thus created are stored in linked list, and seperate child servers will be forked off to handle the clients on those particular interfaces. The node to store these linked list of socket descriptors is of the type given below:
+
+/* Structure for storing interface information */
+typedef struct Node
+{
+	int sockfd;
+	struct sockaddr_in *ip_address;
+	struct sockaddr_in *network_mask;
+	struct sockaddr_in subnet_address;
+	struct client_info *client_info_head;
+	struct Node *next;
+}node;
+
+The node above in the linked list stores the ip-address, network mask and subnet address of the interfaces, it also stores the head of another linked list which is of type client info and is given below:
+
+/* Structure for storing client information */
+typedef struct client_info
+{
+	struct sockaddr_in client_ip_address;
+	pid_t child_pid; 
+	unsigned short client_port;
+	struct client_info *next;
+}client_info;
+
+For every interface node, it keeps track of all its existing connections and stores the information required (client ip-address, client port and the child-pid forked off to handle this client). This is important because the child process is not forked off again if it receives packets (even retransmitted file-name and acknowledgement) from the same client(ip-port tuple) as there would already be an existing client handling it. The child-pid information is stored so as to clean our list to remove its information in the SIGCHILD signal handler. This is done because, if we do not remove the client information after it is serviced successfully, since it will be present in the list, we do not fork the child next time and this prevents the same client to request for service again. This is resolved using purging the linked list of existing clients which are completed. 
+
+void sig_chld(int signo)
+{
+    pid_t pid;
+    int status;
+    printf("SIGNAL: SIGCHILD handler in parent client.\n");
+    while((pid = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+    	purge_client_connection(for_purging_head, pid); // THIS FUNCTION CALL PURGES THE CLIENT INFORMATION
+        printf("SIGNAL: Child %d Terminated\n", pid);
+    }
+    return;
+}
+
+2) Client-server detection.
+The client detects its interfaces using the same function get_ifi_info_plus(). It then extracts ip-address using (struct sockaddr_in *) ifi->ifi_addr and the network mask of the address using (struct sockaddr_in *)ifi->ifi_ntmaddr. The server address is read from the file. The client now iterates over all of its interfaces and keeps comparing the server address to see if its on local network/remote network/loopback address. It determines whether the server is local as below
+(servaddr.sin_addr.s_addr & mask->sin_addr.s_addr) == (locAddr->sin_addr.s_addr & mask->sin_addr.s_addr)
+If the server is local then it sets up the the socket options not to route the packets as below
+setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_DONTROUTE, &optval, sizeof optval); // ONLY IF SERVER AND CLIENT ARE LOCAL
+
+In both cases when the server is local/remote (except loopback), the client picks up an interface such that it is a longest prefix match of the server. The longest prefix match is computed as below:
+
+	for each interface
+			mask = ((struct sockaddr_in *)ifi->ifi_ntmaddr);
+			temp = mask->sin_addr.s_addr;
+			printf("MAsk of the interface : %ld\n", temp);
+			if(temp > longestNetMask)
+			{
+				longestNetMask = temp;
+				ifiClient = ifi;
+			}
+
+The client now creates  a socket, binds it to the selected interface and uses connect() to the server address using a UDP socket. After the connect() is successful it then gets the server address from getpeername() and prints out whether server address. 
+
+3) Initial handshake
+The initial handshake starts off with client initiating the transfer by sending the file name it wants to receive. The server receives the file name and then responds back to the client by sending port number which it has to communicate to from next time onwards. This is due to the server side child forking and the parent listening back on the same interface for other clients to connect to. 
+
+The client retransmits file-name 12 times till it receives the acknowledgement (port number) from the server. If it doesnt receive it, then it terminates informing the user. More details about packet drop simulation is explained in section 10 of this document.
+
+The server when it receives a file-name packet from the client (new client - the one which is not present in that client information linked list), it forks off a new child, stores the client information in the linked list and then the child  will close all other inherited socket descriptors except the current one. The server then asks the kernel to assign a new port number and then this new port number is copied to a datagram buffer and sent across both the sockets (the old socket which received the file name and new socket which is created by the child). This is done because the server is not aware of whether the client moved on to new port or not. This happens because if the client acknowledgment for the port number is lost (or) the server message of the port number to the client is lost. 
+
+The client once it receives the port number successfully and sends an acknowledgement for the port number as its window size and waits for a datagram with buffer containing string "ACK" to complete the handshake. All the packets between server-client has a retransmission counter of 12 and if the other end does not respond back then the corresponding end terminates (server terminates the child but keeps listening to accept new clients)
+
+
+	****************** HANDSHAKE PROTOCOL **********************
+
+	CLIENT (filename) ------------------> SERVER  
+	CLIENT <----------------------------- (port number) SERVER
+	CLIENT (window size) ---------------> SERVER
+	CLIENT <----------------------------- (ACK) SERVER
+
+The client and server after a successful handshake will go ahead with file transmission using data packets. 
+
+4) 
+
+Sliding window(Flow control) is implemented using the Linked List data structure.
+Whenever the server want to send the packets to client, it adds that packet to the list with following header structure.
+
+struct header{
+	int seq;			//Determines the sequence Number of the packet
+	uint32_t ts;			//Determines the timestamp whenever the packet was first sent or added into the list
+	mybool isACK;			//Whether the Packet is ACK or not (1 for ACK otherwise 0)
+	mybool isLast;			//isLAst actually determines what type of packet it 
+					//isLast = 1 ----->  The packet is the Last Packet
+					//isLast = 2 ----->  The packet is the probing packet
+					//isLAst = 3 ----->  The packet is the reply to the probing packet
+	int availWindow;		//Determines the available window size with respect to the client
+};
+
+Each packet is repesented as iovec structure i.e. struct iovec iovsend[2].
+iovsend[0].iov_base -----> contains the struct header for the packet
+iovsend[0].iov_len  -----> length associated with struct header
+iovsend[1].iov_base -----> conatins the actual data to be sent
+iovsend[1].iov_len  -----> length associated with the data to be sent
+
+The server keep track of the available window size of the client and fills up his buffer based on min(clientWindowSize, serverWindowSize).
+
+On client side, If the client has received packets 1,2,4,6 and its max buffer size = 10.
+Then while sending the latest ACK, it sends its availWindowSIze = 6.
+
+The server first sends all the packet at a go, then starts the timer based on the head of the linked list (window buffer).
+Then blocks on reading the reading ACK from the client.
+
+We have implemented my FTP Server-Client in such a way that,
+if we send packets 1,2,3,4 to the client and client sends ACK 1, that means client has successfully received packet with sequence number 1.
+
+While receiving ACK's, the server checks the follwong conditions:
+a) Whenever it receives an ACK it updates the Round Trip Time using Jacobson's SIGCOMM '88 paper.
+b) Removes the packet with seqNo == recvACK from my list
+c) Checks the received ACK value with the expected ACK value,
+	If recvACK == expectedACK ----> expectedACK++
+	if recvACK <  expectedACK ----> countDup++ (If countDup == 4) Fast retransmit takes place.
+	If recvACK >  expectedACK ----> expectedACK= recvACK+1
+d) If the recvACK == lastSequenceSent, I stop my timer i.e. rset it to zero, and go to start sending again based on the availableWindow
+on the client side.
+
+In case, a timeout occurs, I send the packet associated with the expectedACK and wait on receiving its ACK.
+It keeps on happens till 12 times, then I finally give up saying network conditions pretty bad.
+In case, I received the associated ACK, I change my timerCount back to 1, and wait on other expected ACKs.
+
+5)
+
+Probing packet - it is the packet sent by the server when the receivedACK contained availWIndow = 0.
+It keeps on probing the client with this packet for 12 times, each with a timer of 5 seconds, untill the client
+sends a availWIndowSize > 0.
+After receiving such a window, the server resums its sending packets procedure.
+
+he client detects the probing packet via the struct header isLast field.
+If recvhdr.isLast == 2
+then, it implies it is a probing packet, and the client reply by sending
+sendhdr.isLast == 3 (which is considered as the reply to the probing packet to the server).
+
+6)
+
+TimeOut Functionality for flow Control is implemented via SIGALRM using setitimer, which gives us an API to set the 
+timer precision to milliseconds.
+
+The signal handler of SIGALRM by
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+Whenever the server receive this signal, the server is sent to the block of code where 
+if (sigsetjmp(jmpbuf, 1) != 0) 
+{
+	//do something
+} 
+
+is handled, irrespective to its position, and the execution of the code then starts from that place.
+
+The SIGNAL is blocked when the server sends the packets, using sigset_t and sigprocmask.
+
+And unblocks as soon the server finishes sending my datagram packets.
+
+Calculation of RoundTripTime is implemented on the grounds of the Stevens code only, but chaged their functions
+from Floating point arithmatics to integer arithmatics. All the elements in the
+struct my_rtt_info {
+  uint32_t	rtt_rtt;	/* most recent measured RTT, in milliseconds */
+  uint32_t	rtt_srtt;	/* smoothed RTT estimator, in milliseconds */
+  uint32_t	rtt_rttvar;	/* smoothed mean deviation, in milliseconds */
+  uint32_t	rtt_rto;	/* current RTO to use, in milliseconds */
+  int		rtt_nrexmt;	/* # times retransmitted: 0, 1, 2, ... */
+  uint64_t	rtt_base;	/* # millisec since 1/1/1970 at start */
+};
+
+are changed to milliseconds.
+
+And redefined the
+#define	RTT_RXTMIN      1000	/* min retransmit timeout value, in milliseconds */
+#define	RTT_RXTMAX      3000	/* max retransmit timeout value, in milliseconds */
+#define	RTT_MAXNREXMT 	12	/* max # times to retransmit */
+
+And everytime the timeout happens, the server calculates the new value of time by multiplying the previous value by 2.
+But, it is passed through the my_rtt_minmax function which maps that values in between RTT_RXTMIN and RTT_RXTMAX.
+And also keeps tracks how many times the timeout has actually occured.
+After 12 successive timeouts for a packet, the server gives up sending "Network conditions are pretty bad".
+
+The calculation of the new RTT is based on Jacobson's SIGCOMM '88 paper, which is again passed through the minmax function.
+
+void my_rtt_stop(struct my_rtt_info *ptr, uint32_t ms)
+{
+	int		delta;
+
+	ptr->rtt_rtt = ms;					/* measured RTT in milliseconds */
+	delta = ptr->rtt_rtt - ptr->rtt_srtt;
+	ptr->rtt_srtt += delta / 8;				/* g = 1/8 */
+	if (delta < 0)
+		delta = -delta;					/* |delta| */
+	ptr->rtt_rttvar += (delta - ptr->rtt_rttvar) / 4;	/* h = 1/4 */
+	ptr->rtt_rto = my_rtt_minmax(RTT_RTOCALC(ptr));
+}
+
+my_rtt_newpack redefines the rtt_nrexmt to 0, so that the timer is reset to 0 i.e. it has to do again 12 timeout, before giving up.
+my_rtt_ts gives me the current timestamp in integer, using gettimeofday.
+
+
+7)
+
+Congestion Control structure consists of
+struct congestion{
+	int ssthresh;		//Threshold value which is always less than or equal to the current window size
+	int maxWindowSize;	//Max window size handled by congestion control == min(serverWindow, clientWindow)
+	int currWindowSize;	//Current window size available from client
+	int state;		//Either MultiplicativeIncrease or AdditiveIncrease
+};
+
+We update values of this structure based on the state, and then compare the updated values with maxWindowSize and then updates them accordingly. And based on these updated values we decide which state to start with.
+The current window size also depends on the available window size on the client side.
+
+		myCongestion.maxWindowSize = recvCliWindow;
+		congestionValues(&myCongestion, myCongestion.state);
+		tempWindow = myCongestion.currWindowSize;
+
+The server deals with only two cases of congestion control
+a) When fast retransmission happens - The congestion window and ssthreshold are dropped to (ssthreshold/2)
+And the state of the congestion control becomes Additive Increase == COngestion Avoidance
+
+b) When a timeout occurs - The congestion window is dropped to 1 and ssthreshold is dropped to (ssthreshold/2)
+And the state of the congestion control becomes MultiplicativeIncrease == Slow Start
+
+8) Multi-threading at client side, synchronization.
+
+Client Producer: The main thread of the client serves as the producer. It receives data packets and transmits the acknowledgement.
+Client Consumer: A worker thread is created by the main thread which consumes the packets which are in ORDER in the window and prints them out onto the stdout as well as captures them into a file. The new file name which is received will be prefixed with "RECVD_" for the original filename. This is done so as to use "diff" command to see of the transferred files are same or not. 
+
+The main thread of the client creates a worker thread by calling
+pthread_create(&consumer_thread,NULL,print_consumer,NULL); // A thread will be created and it will run the function named print_consumer.
+
+The main thread continues to infinitely wait on socket select to see if any datagrams are received. Once a datagram is received, it snoops into the packet to find if it is a normal datagram packet or a probe packet send by the server to enquire about the updated window size. If it is a probe packet it will be handled as describe above. If it is a data packet and if the generated probability (which is explained in section 10) is >= probability in client.in then it adds up to the receiving window. 
+
+The client consumer, tries to consume the packets in the receiving window if there are any packets in ORDER. As soon as it consumes (or if there is nothing to consume) the consumer thread goes to sleep for a particular milliseconds and wakes up to see if there are any packets in order to consume. This happens until the last packet is consumed ("isLast" field in the header is set to 1). The function below is used to generate the time for the consumer thread to sleep when after it consumes the data:
+
+int generate_random_number()
+{
+	return (-1) * log((float)drand48()) * p_args.meanTime;
+}
+
+We have used usleep() function in the print thread to sleep for that many milliseconds computed by the generate_random_number() function.
+
+The receiving window becomes the critical section for both main thread and the consumer thread. The synchronization between these two threads is achieved using a mutex given as below:
+
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+The main thread does the following (after creating the worker consumer thread):
+
+			pthread_mutex_lock(&count_mutex);			
+			............................................................
+				Add the packet to the receiving window,
+				Do necessary calculation as to which acknowledgement is to be sent
+			.............................................................
+			/*unlock the variable*/
+			pthread_mutex_unlock(&count_mutex);
+
+The printer has to ensure that the received packet is the packet which is in order and can be consumed, if the packet received is not in ORDER, then the print thread goes to sleep waiting for the main thread to add packets in correct order. The print consumer thread will wake up again and see if there is any packet to consume and repeats itself till last packet. 
+
+The consumer thread does the following :
+		
+		/*lock the variable*/
+		pthread_mutex_lock(&count_mutex);
+
+			.....................................
+			get the packets from the buffer and print them and delete them from the receiving window
+			......................................
+
+		/*unlock the variable*/
+		pthread_mutex_unlock(&count_mutex);
+		time_to_sleep = generate_random_number();
+		printf("Print thread sleeping for %d milliseconds.\n", time_to_sleep);
+		usleep(time_to_sleep * 1000);
+
+Upon receiving last packet by the main thread, it flags indicating the last packet and sends an ACK for this last packet to the server. It then goes to a TIME_WAIT state (if this ACK is lost, server keeps sending last packet again and again). The main thread retransmit the ACK for the last packet for 5 times and then terminates. But before the main thread terminates it has to make sure that the printer thread consumed all the packets until last packet and then do a clean closure. This is achieved as below:
+
+pthread_join(consumer_thread, NULL);
+pthread_mutex_destroy(&count_mutex);
+
+This allows the main thread to wait until the worker thread is terminated. It then cleans up the mutex and terminates indicating the user with the file name of the transferred file.
+
+9) 
+
+The client whenever it receives a packet, it sends back the acknowledgement. But in case when it receives a lost packet, it sends an acknowledgement with a sequence number which is in ORDER till now. Only in this case it sends a cumulative acknowledgement. 
+
+Ex: If the server sends packets 1,2,3,4,5,6,7 and the clients receives 1,2,4,5,6,7. The client sends ACK 1, ACK 2, ACK 3, ACK 3, ACK 3, ACK 3 respectively but adds up the packets 4,5,6 and 7 to the receiving window. Upon receiving packet 3 now, the client sends an ACK 6 which is cumulative only in this case.
+
+10) 
+
+The packet-drop simulation is done one the client side by dropping the packets (thus not sending the acknowledgements). We have used drand48() pseudo-random generator function which a seed value given in the client.in file and setting the seed as below:
+
+srand48(seed);
+
+drand48() function is called after every data packet is received and it adds up to the receiving window for the printer thread to consume only if it is >= probability in client.in file. If it is < the probability given in the client.in file, then it drops the packet (meaning doesnt add to the receiving window. More details below.
+
+i) Drop simulation during handshake:
+
+		****************** HANDSHAKE PROTOCOL **********************
+		CLIENT (filename) ------------------> SERVER  
+		CLIENT <----------------------------- (port number) SERVER
+		CLIENT (window size) ---------------> SERVER
+		CLIENT <----------------------------- (ACK) SERVER
+
+The client initiates the communication by sending file name (this packet is not dropped because it doesnt make any difference to the server, it still listens on the port to accept connections). The port number sent from the packet is either received or dropped depending on the random probability generated by drand48().
+If the port number packet is dropped, the client attempts to send filename packet again to the server, but this time the server looks up in the linked list of the clients to that particular interface and realizes that it has already forked the child server to handle this client so it does not fork again. It now sends port number on both the port on which it has received this packet as well as the ephemeral port assigned by the kernel. 
+Again, the window size packet sent by the client is either sent/dropped depending on the random probability generated. Once it goes through, the ACK is sent by the server and this is not dropped. If this phase completes successfully, the data transmission follows. 
+
+ii) Packet drop simulation during data transmission:
+All the packets received by the server during the data transmission are either dropped or added to the receiving window depending on the random probability generated by drand48(). If the generated probability is >= probability given in the client.in file the the packet is added to the receiving window and is ready to be consumed by the print thread if it is one of the packet that is in order. If the generated probability is < the probability given in client.in then the packet is not added to the receiving window. This simulates the packet drop simulation.
+
+iii) ACK drop simulation during data transmission:
+The ACK to be sent back to the server is decided up on the probability generated by drand48() function. If the generated probability is >= probability given in the client.in file then the ACK is sent to the server, else the ACK is not sent to the server. If the ACK is not sent to the server, then the server assumes that the client has not received the previous packet and tries to retransmit again. This retransmitted packet sent by the server is looked up by the client as an old packet which is consumed. So it again sends the latest ACK which it has sent to the server (again this goes through if the random probability generated is >= the probability given in the client.in file). This simulates ACK drop simulation.
+
+11)
+
+Handling the last packet was something to ponder upon.
+When the client receives the lastpacket, it sends it acknowledgemet and engulfs itself in a timer.
+The client waits for any late transmission from server or replay last packet, and in each case sends the acks for the last packet.
+
+If The server receives the ACK for the last packet, its work is completed and the server child dies.
+Otherwise after 12 retries, it dies off, giving an error "Network conditions are pretty bad".
+
+With respect to the client, whatever the case, it goes to a TIME_WAIT state when acknowledgement for the last packet is lost, it keeps sending ACK for the last packet for 5 times only when it receives the repeated last packet from the server. After this,  the client dies off and notifies the user about successfull file transfer.

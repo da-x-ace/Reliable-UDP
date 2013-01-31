@@ -1,0 +1,6433 @@
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+void copyNode(struct myList* node, struct iovec* iv)
+{
+	//printf("Inside copyData\n");
+	node->iv = calloc(2,sizeof(struct iovec));
+	//memset(head->iv, 0, sizeof(head->iv));
+	struct header* thishdr = (struct header*)iv[0].iov_base;
+	struct header* temphdr = malloc(sizeof(struct header));
+	memset(temphdr, 0, sizeof(struct header));
+	temphdr->seq = thishdr->seq;
+	temphdr->ts = thishdr->ts;
+	temphdr->isACK = thishdr->isACK;
+	temphdr->isLast = thishdr->isLast;
+	temphdr->availWindow = thishdr->availWindow;
+
+	node->iv[0].iov_base = (void*)temphdr;
+	node->iv[0].iov_len  = iv[0].iov_len;
+//	node->iv[1].iov_base = strdup((char*)iv[1].iov_base);
+	char *tempBuf = (char*)malloc(sizeof(char)*FILEBUFSIZE);
+	memset(tempBuf, 0, FILEBUFSIZE);
+	memcpy(tempBuf, (char*)iv[1].iov_base, FILEBUFSIZE);
+#ifdef DEBUG1
+	printf("Temp buf : %s\n", tempBuf);
+#endif
+	node->iv[1].iov_base = tempBuf;
+
+	node->iv[1].iov_len  = iv[1].iov_len;
+
+#ifdef DEBUG1
+	struct header* tempp = (struct header*) node->iv[0].iov_base;
+	printf("Seq No. : %d\n", tempp->seq);
+	printf("Data : %s\n",((char*)(node->iv[1].iov_base)));
+#endif
+}
+
+void deallocateNode(struct myList *node)
+{
+	free(node->iv[0].iov_base);
+	free(node->iv[1].iov_base);
+	free(node->iv);
+	free(node);
+}
+
+
+struct myList* addToList(struct myList* head, struct iovec* iv)
+{
+	struct myList* node;
+	
+	if(head == NULL)
+	{
+		//printf("\n In here\n");
+		node=(struct myList *)malloc(sizeof(struct myList));
+		//memset(head, 0, sizeof(struct myList));
+		copyNode(node, iv);
+		//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+		node->next = NULL;
+		head=node;
+		return head;
+	}
+	else
+	{
+		int checkSeq = ((struct header*)(iv[0].iov_base))->seq;
+		struct myList *temp = head;
+		int tempSeq  = ((struct header*)(temp->iv[0].iov_base))->seq;
+		if(checkSeq <= tempSeq)
+		{
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+			node->next = temp;
+			head=node;
+			return head;
+		}
+		else
+		{
+			while(temp->next != NULL)
+			{
+				tempSeq = ((struct header*)(temp->next->iv[0].iov_base))->seq;
+				if(checkSeq <= tempSeq)
+				{
+					node=(struct myList *)malloc(sizeof(struct myList));
+					copyNode(node, iv);
+					//printf(" Data : %s\n",(char*)(head->iv[1].iov_base));
+					node->next = temp->next;
+					temp->next=node;
+					return head;
+				}
+				temp = temp->next;
+			}
+			
+			node=(struct myList *)malloc(sizeof(struct myList));
+			copyNode(node, iv);
+			node->next = NULL;
+			temp->next = node;
+			return head;
+		}
+#include <setjmp.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <signal.h>
+#include "udp_utils.h"
+#include "myftp.h"
+#include "myrtt.h"
+
+static struct my_rtt_info rttinfo;
+static int rttinit=0;
+
+
+struct header sendhdr, recvhdr;
+
+static sigjmp_buf jmpbuf;
+
+struct myList *head=NULL;
+
+//typedef struct sockaddr* mysockaddr;
+
+static void sig_alarm(int signo)
+{
+	siglongjmp(jmpbuf,1);
+}
+
+
+
+
